@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	gogithub "github.com/google/go-github/v32/github"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/securecookie"
 	"github.com/sethvargo/go-password/password"
 	"github.com/vmihailenco/msgpack/v5"
@@ -35,6 +37,13 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 	s := new(Server)
 
 	r := chi.NewRouter()
+	r.Use(
+		middleware.Recoverer,
+		middleware.RealIP,
+		handlers.ProxyHeaders,
+		noCache,
+		middleware.Logger,
+	)
 	r.Get(s.config.Prefix+"/start", s.Start)
 	r.Group(func(r chi.Router) {
 		// POST or GET
@@ -82,7 +91,7 @@ func (s *Server) Start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	stateString := base64.StdEncoding.EncodeToString(stateBytes)
+	stateString := base64.URLEncoding.EncodeToString(stateBytes)
 	domain := r.URL.Hostname()
 	if domain == "" {
 		_host := strings.Split(r.Host, ":")
@@ -328,4 +337,11 @@ func timeNow() time.Time {
 		return time.Now()
 	}
 	return nowFunc()
+}
+
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
