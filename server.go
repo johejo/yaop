@@ -8,32 +8,32 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	gogithub "github.com/google/go-github/v32/github"
 	"github.com/gorilla/handlers"
-	"github.com/gorilla/securecookie"
-	"github.com/sethvargo/go-password/password"
 	"github.com/vmihailenco/msgpack/v5"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
 )
 
+type cookieEncodeDecoder interface {
+	Decode(name, value string, std interface{}) error
+	Encode(name string, value interface{}) (string, error)
+}
+
+type formDecoder interface {
+}
+
 type Server struct {
-	mux          http.Handler
-	config       *ServerConfig
-	providers    ProviderStorage
-	secureCookie *securecookie.SecureCookie
+	mux       http.Handler
+	config    *ServerConfig
+	providers ProviderStorage
 }
 
 var _ http.Handler = (*Server)(nil)
 
-func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
+func NewServer(ctx context.Context, config *ServerConfig, providers ProviderStorage) (*Server, error) {
 	s := new(Server)
 
 	r := chi.NewRouter()
@@ -53,15 +53,41 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 	r.Get(s.config.Prefix+"/auth", s.Auth)
 	r.Get(s.config.Prefix+"/api/v0/token", s.Token)
 	s.mux = r
-
-	s.secureCookie = securecookie.New([]byte(config.Cookie.HashKey), []byte(config.Cookie.BlockKey))
-	s.secureCookie.SetSerializer(msgpackSerializer{})
+	s.providers = providers
 
 	return s, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
+}
+
+type csrfCookieValue struct {
+	EncodedState string `msgpack:"encodedState"`
+}
+
+func newCsrfCookieValue(state string) *csrfCookieValue {
+	return &csrfCookieValue{EncodedState: state}
+}
+
+func decodeCsrfCookieValue(raw string) (*csrfCookieValue, error) {
+	b, err := base64.URLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, err
+	}
+	var v csrfCookieValue
+	if err := msgpack.Unmarshal(b, &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func (v *csrfCookieValue) EncodeToString() (string, error) {
+	b, err := msgpack.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 func (s *Server) Start(w http.ResponseWriter, r *http.Request) {
@@ -85,35 +111,25 @@ func (s *Server) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := newState(next)
-	stateBytes, err := msgpack.Marshal(state)
+	encodedState, err := state.EncodeToString()
 	if err != nil {
 		log.Printf("[ERROR] %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	stateString := base64.URLEncoding.EncodeToString(stateBytes)
-	domain := r.URL.Hostname()
-	if domain == "" {
-		_host := strings.Split(r.Host, ":")
-		if len(_host) >= 1 {
-			domain = _host[0]
-		}
+
+	encodedCookieValue, err := newCsrfCookieValue(encodedState).EncodeToString()
+	if err != nil {
+		log.Printf("[ERROR] %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	csrfCookie := &http.Cookie{
-		Name:     s.config.Cookie.Name + "_csrf",
-		Value:    stateString,
-		Expires:  timeNow().Add(1 * time.Hour),
-		SameSite: s.config.Cookie.SameSite,
-		HttpOnly: s.config.Cookie.HttpOnly,
-		Secure:   s.config.Cookie.Secure,
-		Path:     s.config.Prefix + "/callback",
-		Domain:   domain,
-	}
-	http.SetCookie(w, csrfCookie)
+
+	s.setCsrfCookie(w, r, encodedCookieValue, 1*time.Hour)
 
 	http.Redirect(
 		w, r,
-		p.AuthCodeURL(stateString, s.getCallbackURL(r)),
+		p.AuthCodeURL(encodedState, s.getCallbackURL(r)),
 		http.StatusFound,
 	)
 }
@@ -148,8 +164,119 @@ func (s *Server) getCallbackURL(r *http.Request) string {
 	return clone.String()
 }
 
-func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
+func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, name string, value string, expiresIn time.Duration) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Expires:  timeNow().Add(expiresIn),
+		SameSite: s.config.Cookie.SameSite,
+		HttpOnly: s.config.Cookie.HttpOnly,
+		Secure:   s.config.Cookie.Secure,
+		Path:     s.config.Prefix + "/callback",
+		Domain:   getDomain(r),
+	})
+}
 
+func (s *Server) setCsrfCookie(w http.ResponseWriter, r *http.Request, value string, expiresIn time.Duration) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.config.CsrfCookieName(),
+		Value:    value,
+		Expires:  timeNow().Add(expiresIn),
+		SameSite: http.SameSiteNoneMode, // cross site cookie
+		HttpOnly: s.config.Cookie.HttpOnly,
+		Secure:   s.config.Cookie.Secure,
+		Path:     s.config.Prefix + "/callback",
+		Domain:   getDomain(r),
+	})
+}
+
+func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
+	// clear csrf cookie
+	defer s.setCsrfCookie(w, r, "", -1*time.Hour)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid request param", http.StatusBadRequest)
+		return
+	}
+
+	errString := r.Form.Get("error")
+	if errString != "" {
+		log.Printf("[ERROR] callback error: %v", errString)
+		http.Error(w, "callback error", http.StatusBadRequest)
+		return
+	}
+
+	code := r.Form.Get("code")
+	if code == "" {
+		log.Printf("[ERROR] code does not exist in callback: %v", code)
+		http.Error(w, "no code", http.StatusBadRequest)
+		return
+	}
+
+	encodedState := r.Form.Get("state")
+	if encodedState == "" {
+		log.Printf("[ERROR] state does not exist in callback")
+		http.Error(w, "no state", http.StatusBadRequest)
+		return
+	}
+
+	formState, err := decodeState(encodedState)
+	if err != nil {
+		log.Printf("[ERROR] invalid state signature: %v", encodedState)
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+
+	csrfCookie, err := r.Cookie(s.config.CsrfCookieName())
+	if err != nil {
+		http.Error(w, "no csrf cookie", http.StatusBadRequest)
+		return
+	}
+
+	csrfCookieValue, err := decodeCsrfCookieValue(csrfCookie.Value)
+	if err != nil {
+		http.Error(w, "invalid csrf cookie", http.StatusBadRequest)
+		return
+	}
+
+	cookieState, err := decodeState(csrfCookieValue.EncodedState)
+	if err != nil {
+		http.Error(w, "invalid csrf cookie", http.StatusBadRequest)
+		return
+	}
+
+	if formState.CsrfToken != cookieState.CsrfToken {
+		http.Error(w, "invalid csrf token", http.StatusBadRequest)
+		return
+	}
+	if formState.Next != cookieState.Next {
+		http.Error(w, "invalid next url", http.StatusBadRequest)
+		return
+	}
+
+	st := formState
+	ctx := r.Context()
+	p, err := s.providers.Load(ctx, st.Provider)
+	if err != nil {
+		log.Printf("[ERROR] no provider %s %v", st.Provider, err)
+		http.Error(w, fmt.Sprintf("provider %s does not exist", st.Provider), http.StatusInternalServerError)
+		return
+	}
+
+	token, err := p.Exchange(ctx, code, s.getCallbackURL(r))
+	if err != nil {
+		log.Printf("[ERROR] exchange error %v", err)
+		http.Error(w, "exchange error", http.StatusInternalServerError)
+		return
+	}
+
+	email, err := p.GetEmailAddress(ctx, token)
+	if err != nil {
+		log.Printf("[ERROR] get email error %v", err)
+		http.Error(w, "get email error", http.StatusInternalServerError)
+		return
+	}
+	_ = email
 }
 
 func (s *Server) Auth(w http.ResponseWriter, r *http.Request) {
@@ -161,16 +288,33 @@ func (s *Server) Token(w http.ResponseWriter, r *http.Request) {
 }
 
 type state struct {
-	Secret string `msgpack:"secret"`
-	Next   string `msgpack:"next"`
+	CsrfToken string `msgpack:"csrf_token"`
+	Next      string `msgpack:"next"`
+	Provider  string `msgpack:"provider"`
 }
 
 func newState(next string) *state {
-	return &state{Secret: genSecret(), Next: next}
+	return &state{CsrfToken: genSecret(), Next: next}
 }
 
-func genSecret() string {
-	return password.MustGenerate(32, 8, 0, false, false)
+func (s *state) EncodeToString() (string, error) {
+	b, err := msgpack.Marshal(s)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+func decodeState(raw string) (*state, error) {
+	b, err := base64.URLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, err
+	}
+	var st state
+	if err := msgpack.Unmarshal(b, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
 }
 
 type ServerConfig struct {
@@ -184,164 +328,22 @@ type ServerConfig struct {
 	AllowedDomains []string
 }
 
+func (c *ServerConfig) CsrfCookieName() string {
+	return c.Cookie.Name + c.Cookie.CsrfSuffix
+}
+
 type CookieConfig struct {
 	HashKey  string
 	BlockKey string
 
-	Name      string
-	ExpiresIn time.Duration
-	SameSite  http.SameSite
-	HttpOnly  bool
-	Secure    bool
+	Name       string
+	CsrfSuffix string
+	ExpiresIn  time.Duration
+	SameSite   http.SameSite
+	HttpOnly   bool
+	Secure     bool
 }
 
-type ProviderStorage interface {
-	Load(ctx context.Context, name string) (Provider, error)
-}
-
-var _ ProviderStorage = (*InMemoryProviderStorage)(nil)
-
-type InMemoryProviderStorage struct {
-	store sync.Map
-}
-
-func (ps *InMemoryProviderStorage) Load(ctx context.Context, name string) (Provider, error) {
-	_p, ok := ps.store.Load(name)
-	if !ok {
-		return nil, fmt.Errorf("specified provider %s was not found", name)
-	}
-	p, ok := _p.(Provider)
-	if !ok {
-		return nil, errors.New("invalid provider")
-	}
-	return p, nil
-
-}
-
-type Provider interface {
-	Name() string
-	AuthCodeURL(state string, redirectURL string) string
-	GetEmailAddress(ctx context.Context, sess *Session) (string, error)
-}
-
-var _ Provider = (*GitHubProvider)(nil)
-
-type GitHubProvider struct {
-	name   string
-	config *GitHubProviderConfig
-}
-
-type GitHubProviderConfig struct {
-	ClientID     string
-	ClientSecret string
-	Scopes       []string
-	Login        string
-	AllowSignup  bool
-}
-
-func (p *GitHubProvider) Name() string {
-	return p.name
-}
-
-func NewDefaultGitHubProvider(ctx context.Context, config *GitHubProviderConfig) (*GitHubProvider, error) {
-	return NewGitHubProvider(ctx, "GitHub", config)
-}
-
-func NewGitHubProvider(ctx context.Context, name string, config *GitHubProviderConfig) (*GitHubProvider, error) {
-	return &GitHubProvider{
-		name:   name,
-		config: config,
-	}, nil
-}
-
-func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
-	config := &oauth2.Config{
-		ClientID:     p.config.ClientID,
-		ClientSecret: p.config.ClientSecret,
-		Endpoint:     github.Endpoint,
-		RedirectURL:  redirectURL,
-		Scopes:       p.config.Scopes,
-	}
-	opts := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("allow_signup", strconv.FormatBool(p.config.AllowSignup)),
-		oauth2.SetAuthURLParam("nonce", genSecret()),
-	}
-	if p.config.Login != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("login", p.config.Login))
-	}
-	return config.AuthCodeURL(state, opts...)
-}
-
-func (p *GitHubProvider) GetEmailAddress(ctx context.Context, sess *Session) (string, error) {
-	// TODO support Team, Organization, Collaborator
-	client := gogithub.NewClient(oauth2.NewClient(ctx, oauth2.StaticTokenSource(sess.Token)))
-	me, _, err := client.Users.Get(ctx, "")
-	if err != nil {
-		return "", err
-	}
-	return me.GetEmail(), nil
-}
-
-type Session struct {
-	Token *oauth2.Token
-}
-
-type ProviderConfig struct{}
-
-type msgpackSerializer struct{}
-
-var _ securecookie.Serializer = (*msgpackSerializer)(nil)
-
-func (msgpackSerializer) Serialize(v interface{}) ([]byte, error) {
-	return msgpack.Marshal(v)
-}
-
-func (msgpackSerializer) Deserialize(data []byte, dst interface{}) error {
-	return msgpack.Unmarshal(data, dst)
-}
-
-type yaopError struct {
-	httpStatus int
-	msg        string
-	err        error
-}
-
-var _ error = (*yaopError)(nil)
-
-func (e *yaopError) Error() string {
-	if e.err != nil {
-		return fmt.Sprintf("msg=%s, err=%v", e.msg, e.err.Error())
-	}
-	return fmt.Sprintf("msg=%s", e.msg)
-}
-
-func (e *yaopError) Unrap() error {
-	if e.err != nil {
-		return e.err
-	}
-	return nil
-}
-
-func wrapErr(httpStatus int, msg string, err error) error {
-	return &yaopError{httpStatus: httpStatus, msg: msg, err: err}
-}
-
-func newErr(httpStatus int, msg string) error {
-	return &yaopError{httpStatus: httpStatus, msg: msg}
-}
-
-var nowFunc func() time.Time = nil
-
-func timeNow() time.Time {
-	if nowFunc == nil {
-		return time.Now()
-	}
-	return nowFunc()
-}
-
-func noCache(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		next.ServeHTTP(w, r)
-	})
+func getDomain(r *http.Request) string {
+	return r.URL.Hostname()
 }
