@@ -29,11 +29,12 @@ type Server struct {
 	mux       http.Handler
 	config    *ServerConfig
 	providers ProviderStorage
+	storage   SessionStorage
 }
 
 var _ http.Handler = (*Server)(nil)
 
-func NewServer(ctx context.Context, config *ServerConfig, providers ProviderStorage) (*Server, error) {
+func NewServer(ctx context.Context, config *ServerConfig, providers ProviderStorage, storage SessionStorage) (*Server, error) {
 	s := new(Server)
 
 	r := chi.NewRouter()
@@ -51,9 +52,16 @@ func NewServer(ctx context.Context, config *ServerConfig, providers ProviderStor
 		r.Post(s.config.Prefix+"/callback", s.Callback)
 	})
 	r.Get(s.config.Prefix+"/auth", s.Auth)
-	r.Get(s.config.Prefix+"/api/v0/token", s.Token)
+	r.Route("/api/v0/provider", func(r chi.Router) {
+		r.Put("/", nil)
+		r.Get("/", nil)
+		r.Get("/{name}", nil)
+	})
+
 	s.mux = r
 	s.providers = providers
+	s.storage = storage
+	s.config = config
 
 	return s, nil
 }
@@ -172,7 +180,7 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, name string, 
 		SameSite: s.config.Cookie.SameSite,
 		HttpOnly: s.config.Cookie.HttpOnly,
 		Secure:   s.config.Cookie.Secure,
-		Path:     s.config.Prefix + "/callback",
+		Path:     "/",
 		Domain:   getDomain(r),
 	})
 }
@@ -276,19 +284,39 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "get email error", http.StatusInternalServerError)
 		return
 	}
-	_ = email
+
+	sess := newSession(email, token)
+	cookieValue, err := s.storage.Store(ctx, sess)
+	if err != nil {
+		log.Printf("[ERROR] store session error %v", err)
+		http.Error(w, "store session error", http.StatusInternalServerError)
+		return
+	}
+
+	s.setCookie(w, r, s.config.Cookie.Name, cookieValue, s.config.Cookie.ExpiresIn)
+
+	http.Redirect(w, r, st.Next, http.StatusFound)
 }
 
 func (s *Server) Auth(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func (s *Server) Token(w http.ResponseWriter, r *http.Request) {
-
+	ctx := r.Context()
+	c, err := r.Cookie(s.config.Cookie.Name)
+	if err != nil {
+		http.Error(w, "no cookie", http.StatusUnauthorized)
+		return
+	}
+	sess, err := s.storage.Load(ctx, c.Value)
+	if err != nil {
+		log.Printf("[ERROR] loading session %v", err)
+		http.Error(w, "error at loading session", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("%v", sess)
+	w.WriteHeader(http.StatusOK)
 }
 
 type state struct {
-	CsrfToken string `msgpack:"csrf_token"`
+	CsrfToken string `msgpack:"csrfToken"`
 	Next      string `msgpack:"next"`
 	Provider  string `msgpack:"provider"`
 }

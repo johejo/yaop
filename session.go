@@ -3,9 +3,8 @@ package yaop
 import (
 	"context"
 
-	"golang.org/x/oauth2"
-
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 )
 
 type Session struct {
@@ -14,8 +13,8 @@ type Session struct {
 	Token *oauth2.Token `json:"token" msgpack:"token"`
 }
 
-func newSession(email string) *Session {
-	return &Session{ID: uuid.New().String(), Email: email}
+func newSession(email string, token *oauth2.Token) *Session {
+	return &Session{ID: uuid.New().String(), Email: email, Token: token}
 }
 
 type SessionStorage interface {

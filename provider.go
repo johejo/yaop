@@ -89,6 +89,7 @@ func (p *GitHubProvider) GetEmailAddress(ctx context.Context, token *oauth2.Toke
 
 type ProviderStorage interface {
 	Load(ctx context.Context, name string) (Provider, error)
+	Store(ctx context.Context, name string, provider Provider) error
 }
 
 var _ ProviderStorage = (*InMemoryProviderStorage)(nil)
@@ -107,4 +108,9 @@ func (ps *InMemoryProviderStorage) Load(ctx context.Context, name string) (Provi
 		return nil, errors.New("invalid provider")
 	}
 	return p, nil
+}
+
+func (ps *InMemoryProviderStorage) Store(ctx context.Context, name string, provider Provider) error {
+	ps.store.Store(name, provider)
+	return nil
 }
