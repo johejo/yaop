@@ -3,6 +3,7 @@ package yaop
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -26,15 +27,15 @@ type formDecoder interface {
 }
 
 type Server struct {
-	mux       http.Handler
-	config    *ServerConfig
-	providers ProviderStorage
-	storage   SessionStorage
+	mux             http.Handler
+	config          *ServerConfig
+	providerStorage ProviderStorage
+	settionStorage  SessionStorage
 }
 
 var _ http.Handler = (*Server)(nil)
 
-func NewServer(ctx context.Context, config *ServerConfig, providers ProviderStorage, storage SessionStorage) (*Server, error) {
+func NewServer(ctx context.Context, config *ServerConfig, providerStorage ProviderStorage, sessionStorage SessionStorage) (*Server, error) {
 	s := new(Server)
 
 	r := chi.NewRouter()
@@ -52,18 +53,75 @@ func NewServer(ctx context.Context, config *ServerConfig, providers ProviderStor
 		r.Post(s.config.Prefix+"/callback", s.Callback)
 	})
 	r.Get(s.config.Prefix+"/auth", s.Auth)
-	r.Route("/api/v0/provider", func(r chi.Router) {
-		r.Put("/", nil)
-		r.Get("/", nil)
-		r.Get("/{name}", nil)
+	r.Route("/api/v0/providers", func(r chi.Router) {
+		r.Put("/", s.PutProvider)
+		r.Get("/", s.GetProviders)
+		r.Get("/{name}", s.GetProvider)
+		r.Delete("/{name}", s.DeleteProvider)
 	})
 
 	s.mux = r
-	s.providers = providers
-	s.storage = storage
+	s.providerStorage = providerStorage
+	s.settionStorage = sessionStorage
 	s.config = config
 
 	return s, nil
+}
+
+func (s *Server) PutProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var pj providerJSON
+	if err := json.NewDecoder(r.Body).Decode(&pj); err != nil {
+		log.Printf("[INFO] invalid body: %v", err)
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	p, err := DecodeProvider(&pj)
+	if err != nil {
+		log.Printf("[INFO] invalid provider: %v", err)
+		http.Error(w, "invalid provider", http.StatusBadRequest)
+		return
+	}
+	if err := s.providerStorage.Store(ctx, p.GetName(), p); err != nil {
+		log.Printf("[ERROR] failed to store provider: %v", err)
+		http.Error(w, "failed to store provider", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) GetProviders(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	providers, err := s.providerStorage.LoadAll(ctx)
+	if err != nil {
+		log.Printf("[ERROR] failed to load providers: %v", err)
+		http.Error(w, "failed to load providers", http.StatusInternalServerError)
+		return
+	}
+	respondJSON(w, providers, http.StatusOK)
+}
+
+func (s *Server) GetProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	name := chi.URLParam(r, "name")
+	p, err := s.providerStorage.Load(ctx, name)
+	if err != nil {
+		log.Printf("[INFO] provider %s was not found: %v", name, err)
+		http.Error(w, "no provider", http.StatusNotFound)
+		return
+	}
+	respondJSON(w, p, http.StatusOK)
+}
+
+func (s *Server) DeleteProvider(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	name := chi.URLParam(r, "name")
+	if err := s.providerStorage.Delete(ctx, name); err != nil {
+		log.Printf("[INFO] provider %s was not found: %v", name, err)
+		http.Error(w, "no provider", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +164,7 @@ func (s *Server) Start(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	p, err := s.providers.Load(ctx, providerName)
+	p, err := s.providerStorage.Load(ctx, providerName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -181,7 +239,7 @@ func (s *Server) setCookie(w http.ResponseWriter, r *http.Request, name string, 
 		HttpOnly: s.config.Cookie.HttpOnly,
 		Secure:   s.config.Cookie.Secure,
 		Path:     "/",
-		Domain:   getDomain(r),
+		Domain:   r.URL.Hostname(),
 	})
 }
 
@@ -194,60 +252,67 @@ func (s *Server) setCsrfCookie(w http.ResponseWriter, r *http.Request, value str
 		HttpOnly: s.config.Cookie.HttpOnly,
 		Secure:   s.config.Cookie.Secure,
 		Path:     s.config.Prefix + "/callback",
-		Domain:   getDomain(r),
+		Domain:   r.URL.Hostname(),
 	})
+}
+
+func decodeStateFromForm(r *http.Request) (*state, string, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, "", err
+	}
+
+	errString := r.Form.Get("error")
+	if errString != "" {
+		return nil, "", fmt.Errorf("callback error: %s", errString)
+	}
+
+	code := r.Form.Get("code")
+	if code == "" {
+		return nil, "", errors.New("no code in form")
+	}
+
+	encodedState := r.Form.Get("state")
+	if encodedState == "" {
+		return nil, "", errors.New("no state in form")
+	}
+
+	formState, err := decodeState(encodedState)
+	if err != nil {
+		return nil, "", err
+	}
+	return formState, code, nil
+}
+
+func (s *Server) decodeStateFromCsrfCookie(r *http.Request) (*state, error) {
+	csrfCookie, err := r.Cookie(s.config.CsrfCookieName())
+	if err != nil {
+		return nil, err
+	}
+
+	csrfCookieValue, err := decodeCsrfCookieValue(csrfCookie.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	cookieState, err := decodeState(csrfCookieValue.EncodedState)
+	if err != nil {
+		return nil, err
+	}
+	return cookieState, nil
 }
 
 func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
 	// clear csrf cookie
 	defer s.setCsrfCookie(w, r, "", -1*time.Hour)
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid request param", http.StatusBadRequest)
-		return
-	}
-
-	errString := r.Form.Get("error")
-	if errString != "" {
-		log.Printf("[ERROR] callback error: %v", errString)
-		http.Error(w, "callback error", http.StatusBadRequest)
-		return
-	}
-
-	code := r.Form.Get("code")
-	if code == "" {
-		log.Printf("[ERROR] code does not exist in callback: %v", code)
-		http.Error(w, "no code", http.StatusBadRequest)
-		return
-	}
-
-	encodedState := r.Form.Get("state")
-	if encodedState == "" {
-		log.Printf("[ERROR] state does not exist in callback")
-		http.Error(w, "no state", http.StatusBadRequest)
-		return
-	}
-
-	formState, err := decodeState(encodedState)
+	formState, code, err := decodeStateFromForm(r)
 	if err != nil {
-		log.Printf("[ERROR] invalid state signature: %v", encodedState)
-		http.Error(w, "invalid state", http.StatusBadRequest)
+		log.Printf("[ERROR] failed to decode state from form")
+		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
 	}
 
-	csrfCookie, err := r.Cookie(s.config.CsrfCookieName())
-	if err != nil {
-		http.Error(w, "no csrf cookie", http.StatusBadRequest)
-		return
-	}
-
-	csrfCookieValue, err := decodeCsrfCookieValue(csrfCookie.Value)
-	if err != nil {
-		http.Error(w, "invalid csrf cookie", http.StatusBadRequest)
-		return
-	}
-
-	cookieState, err := decodeState(csrfCookieValue.EncodedState)
+	cookieState, err := s.decodeStateFromCsrfCookie(r)
 	if err != nil {
 		http.Error(w, "invalid csrf cookie", http.StatusBadRequest)
 		return
@@ -264,7 +329,7 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
 
 	st := formState
 	ctx := r.Context()
-	p, err := s.providers.Load(ctx, st.Provider)
+	p, err := s.providerStorage.Load(ctx, st.Provider)
 	if err != nil {
 		log.Printf("[ERROR] no provider %s %v", st.Provider, err)
 		http.Error(w, fmt.Sprintf("provider %s does not exist", st.Provider), http.StatusInternalServerError)
@@ -286,7 +351,7 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sess := newSession(email, token)
-	cookieValue, err := s.storage.Store(ctx, sess)
+	cookieValue, err := s.settionStorage.Store(ctx, sess)
 	if err != nil {
 		log.Printf("[ERROR] store session error %v", err)
 		http.Error(w, "store session error", http.StatusInternalServerError)
@@ -305,7 +370,7 @@ func (s *Server) Auth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no cookie", http.StatusUnauthorized)
 		return
 	}
-	sess, err := s.storage.Load(ctx, c.Value)
+	sess, err := s.settionStorage.Load(ctx, c.Value)
 	if err != nil {
 		log.Printf("[ERROR] loading session %v", err)
 		http.Error(w, "error at loading session", http.StatusInternalServerError)
@@ -370,8 +435,4 @@ type CookieConfig struct {
 	SameSite   http.SameSite
 	HttpOnly   bool
 	Secure     bool
-}
-
-func getDomain(r *http.Request) string {
-	return r.URL.Hostname()
 }

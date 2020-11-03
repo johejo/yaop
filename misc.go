@@ -1,7 +1,9 @@
 package yaop
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -56,4 +58,16 @@ func noCache(next http.Handler) http.Handler {
 
 func genSecret() string {
 	return password.MustGenerate(32, 8, 0, false, false)
+}
+
+func respondJSON(w http.ResponseWriter, v interface{}, code int) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	b, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[ERROR] failed to marshal json: %v", err)
+		http.Error(w, "failed to marshal json", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(code)
+	_, _ = w.Write(b)
 }
