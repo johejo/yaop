@@ -1,0 +1,8 @@
+providers:
+  - name: github-0
+    config:
+      clientId: "xxx"
+      clientSecret: "yyy"
+      scopes: []
+      state: "zzz"
+      allowSignup: "false"

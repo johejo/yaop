@@ -2,7 +2,6 @@ package yaop
 
 import (
 	"context"
-	"strconv"
 
 	gogithub "github.com/google/go-github/v32/github"
 	"golang.org/x/oauth2"
@@ -17,11 +16,11 @@ type GitHubProvider struct {
 }
 
 type GitHubProviderConfig struct {
-	ClientID     string   `json:"clientId,omitempty"`
-	ClientSecret string   `json:"clientSecret,omitempty"`
-	Scopes       []string `json:"scopes,omitempty"`
-	Login        string   `json:"login,omitempty"`
-	AllowSignup  bool     `json:"allowSignup,omitempty"`
+	ClientID     string   `json:"clientId,omitempty" yaml:"clientId"`
+	ClientSecret string   `json:"clientSecret,omitempty" yaml:"clientSecret"`
+	Scopes       []string `json:"scopes,omitempty" yaml:"scopes"`
+	Login        string   `json:"login,omitempty" yaml:"login"`
+	AllowSignup  string   `json:"allowSignup,omitempty" yaml:"allowSignup"`
 }
 
 func (p *GitHubProvider) GetName() string {
@@ -47,8 +46,9 @@ func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
 		RedirectURL:  redirectURL,
 		Scopes:       p.Config.Scopes,
 	}
-	opts := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("allow_signup", strconv.FormatBool(p.Config.AllowSignup)),
+	var opts []oauth2.AuthCodeOption
+	if p.Config.AllowSignup != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("allow_signup", p.Config.AllowSignup))
 	}
 	if p.Config.Login != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("login", p.Config.Login))

@@ -2,43 +2,12 @@ package yaop
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/sethvargo/go-password/password"
 )
-
-type yaopError struct {
-	httpStatus int
-	msg        string
-	err        error
-}
-
-var _ error = (*yaopError)(nil)
-
-func (e *yaopError) Error() string {
-	if e.err != nil {
-		return fmt.Sprintf("msg=%s, err=%v", e.msg, e.err.Error())
-	}
-	return fmt.Sprintf("msg=%s", e.msg)
-}
-
-func (e *yaopError) Unrap() error {
-	if e.err != nil {
-		return e.err
-	}
-	return nil
-}
-
-func wrapErr(httpStatus int, msg string, err error) error {
-	return &yaopError{httpStatus: httpStatus, msg: msg, err: err}
-}
-
-func newErr(httpStatus int, msg string) error {
-	return &yaopError{httpStatus: httpStatus, msg: msg}
-}
 
 var nowFunc func() time.Time = nil
 

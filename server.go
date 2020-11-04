@@ -2,7 +2,6 @@ package yaop
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,22 +14,16 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/gorilla/handlers"
-	"github.com/vmihailenco/msgpack/v5"
+	"golang.org/x/oauth2"
 )
-
-type cookieEncodeDecoder interface {
-	Decode(name, value string, std interface{}) error
-	Encode(name string, value interface{}) (string, error)
-}
-
-type formDecoder interface {
-}
 
 type Server struct {
 	mux             http.Handler
 	config          *ServerConfig
 	providerStorage ProviderStorage
 	settionStorage  SessionStorage
+
+	httpClient *http.Client
 }
 
 var _ http.Handler = (*Server)(nil)
@@ -46,6 +39,7 @@ func NewServer(ctx context.Context, config *ServerConfig, providerStorage Provid
 		handlers.ProxyHeaders,
 		noCache,
 		middleware.Logger,
+		s.ctxWithHTTPClient,
 	)
 	r.Get(s.config.Prefix+"/start", s.Start)
 	r.Group(func(r chi.Router) {
@@ -127,34 +121,6 @@ func (s *Server) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
-}
-
-type csrfCookieValue struct {
-	EncodedState string `msgpack:"encodedState"`
-}
-
-func newCsrfCookieValue(state string) *csrfCookieValue {
-	return &csrfCookieValue{EncodedState: state}
-}
-
-func decodeCsrfCookieValue(raw string) (*csrfCookieValue, error) {
-	b, err := base64.URLEncoding.DecodeString(raw)
-	if err != nil {
-		return nil, err
-	}
-	var v csrfCookieValue
-	if err := msgpack.Unmarshal(b, &v); err != nil {
-		return nil, err
-	}
-	return &v, nil
-}
-
-func (v *csrfCookieValue) EncodeToString() (string, error) {
-	b, err := msgpack.Marshal(v)
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 func (s *Server) Start(w http.ResponseWriter, r *http.Request) {
@@ -381,34 +347,14 @@ func (s *Server) Auth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-type state struct {
-	CsrfToken string `msgpack:"csrfToken"`
-	Next      string `msgpack:"next"`
-	Provider  string `msgpack:"provider"`
-}
-
-func newState(next string) *state {
-	return &state{CsrfToken: genSecret(), Next: next}
-}
-
-func (s *state) EncodeToString() (string, error) {
-	b, err := msgpack.Marshal(s)
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(b), nil
-}
-
-func decodeState(raw string) (*state, error) {
-	b, err := base64.URLEncoding.DecodeString(raw)
-	if err != nil {
-		return nil, err
-	}
-	var st state
-	if err := msgpack.Unmarshal(b, &st); err != nil {
-		return nil, err
-	}
-	return &st, nil
+func (s *Server) ctxWithHTTPClient(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.httpClient == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), oauth2.HTTPClient, s.httpClient)))
+	})
 }
 
 type ServerConfig struct {
@@ -416,8 +362,6 @@ type ServerConfig struct {
 	ProviderType string
 
 	Cookie *CookieConfig
-
-	httpClient *http.Client // customizable
 
 	AllowedDomains []string
 }

@@ -15,7 +15,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	s, err := NewServer(ctx, config, new(InMemoryProviderStorage), cs)
+	ps := new(InMemoryProviderStorage)
+	if err := ps.Store(ctx, "github", nil); err != nil {
+		return err
+	}
+	s, err := NewServer(ctx, config, ps, cs)
 	if err != nil {
 		return err
 	}

@@ -13,4 +13,5 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/vmihailenco/msgpack/v5 v5.0.0-rc.2
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
+	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 )
