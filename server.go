@@ -37,6 +37,7 @@ var _ http.Handler = (*Server)(nil)
 
 func NewServer(ctx context.Context, config *ServerConfig, providerStorage ProviderStorage, sessionStorage SessionStorage) (*Server, error) {
 	s := new(Server)
+	s.config = config
 
 	r := chi.NewRouter()
 	r.Use(
@@ -426,8 +427,7 @@ func (c *ServerConfig) CsrfCookieName() string {
 }
 
 type CookieConfig struct {
-	HashKey  string
-	BlockKey string
+	Key string
 
 	Name       string
 	CsrfSuffix string

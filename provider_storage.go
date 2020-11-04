@@ -2,6 +2,7 @@ package yaop
 
 import (
 	"context"
+	"errors"
 )
 
 type ProviderStorage interface {
@@ -10,3 +11,7 @@ type ProviderStorage interface {
 	Delete(ctx context.Context, name string) error
 	LoadAll(ctx context.Context) (map[string]Provider, error)
 }
+
+var (
+	ErrProviderNotFound = errors.New("specified provider not found")
+)

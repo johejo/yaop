@@ -11,6 +11,6 @@ require (
 	github.com/mitchellh/mapstructure v1.3.3
 	github.com/sethvargo/go-password v0.2.0
 	github.com/stretchr/testify v1.6.1
-	github.com/vmihailenco/msgpack/v5 v5.0.0-rc.1
+	github.com/vmihailenco/msgpack/v5 v5.0.0-rc.2
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 )

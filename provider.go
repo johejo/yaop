@@ -3,6 +3,7 @@ package yaop
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/oauth2"
@@ -32,7 +33,7 @@ func decodeProvider(pj *providerJSON, dst interface{}) error {
 }
 
 func DecodeProvider(pj *providerJSON) (Provider, error) {
-	switch pj.Type {
+	switch strings.ToLower(pj.Type) {
 	case "github":
 		var p GitHubProvider
 		if err := decodeProvider(pj, &p); err != nil {

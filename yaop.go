@@ -8,7 +8,14 @@ import (
 
 func run() error {
 	ctx := context.Background()
-	s, err := NewServer(ctx, nil, nil, nil) // TODO
+	config := &ServerConfig{
+		Cookie: &CookieConfig{},
+	}
+	cs, err := NewCookieStorage([]byte("1234123412341234"))
+	if err != nil {
+		return err
+	}
+	s, err := NewServer(ctx, config, new(InMemoryProviderStorage), cs)
 	if err != nil {
 		return err
 	}

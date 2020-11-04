@@ -1,7 +1,12 @@
 package main
 
-import "github.com/johejo/yaop"
+import (
+	"log"
+
+	"github.com/johejo/yaop"
+)
 
 func main() {
+	log.SetFlags(log.Lmicroseconds | log.LstdFlags | log.Lshortfile)
 	yaop.Run()
 }

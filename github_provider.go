@@ -13,7 +13,7 @@ var _ Provider = (*GitHubProvider)(nil)
 
 type GitHubProvider struct {
 	Name   string                `json:"name,omitempty"`
-	config *GitHubProviderConfig `json:"config,omitempty"`
+	Config *GitHubProviderConfig `json:"config,omitempty"`
 }
 
 type GitHubProviderConfig struct {
@@ -35,34 +35,34 @@ func NewDefaultGitHubProvider(ctx context.Context, config *GitHubProviderConfig)
 func NewGitHubProvider(ctx context.Context, name string, config *GitHubProviderConfig) (*GitHubProvider, error) {
 	return &GitHubProvider{
 		Name:   name,
-		config: config,
+		Config: config,
 	}, nil
 }
 
 func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
 	config := &oauth2.Config{
-		ClientID:     p.config.ClientID,
-		ClientSecret: p.config.ClientSecret,
+		ClientID:     p.Config.ClientID,
+		ClientSecret: p.Config.ClientSecret,
 		Endpoint:     github.Endpoint,
 		RedirectURL:  redirectURL,
-		Scopes:       p.config.Scopes,
+		Scopes:       p.Config.Scopes,
 	}
 	opts := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("allow_signup", strconv.FormatBool(p.config.AllowSignup)),
+		oauth2.SetAuthURLParam("allow_signup", strconv.FormatBool(p.Config.AllowSignup)),
 	}
-	if p.config.Login != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("login", p.config.Login))
+	if p.Config.Login != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("login", p.Config.Login))
 	}
 	return config.AuthCodeURL(state, opts...)
 }
 
 func (p *GitHubProvider) Exchange(ctx context.Context, code string, redirectURL string) (*oauth2.Token, error) {
 	config := &oauth2.Config{
-		ClientID:     p.config.ClientID,
-		ClientSecret: p.config.ClientSecret,
+		ClientID:     p.Config.ClientID,
+		ClientSecret: p.Config.ClientSecret,
 		Endpoint:     github.Endpoint,
 		RedirectURL:  redirectURL,
-		Scopes:       p.config.Scopes,
+		Scopes:       p.Config.Scopes,
 	}
 	return config.Exchange(ctx, code)
 }

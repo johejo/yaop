@@ -3,7 +3,6 @@ package yaop
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 )
 
@@ -16,7 +15,7 @@ type InMemoryProviderStorage struct {
 func (ps *InMemoryProviderStorage) Load(ctx context.Context, name string) (Provider, error) {
 	_p, ok := ps.store.Load(name)
 	if !ok {
-		return nil, fmt.Errorf("specified provider %s was not found", name)
+		return nil, ErrProviderNotFound
 	}
 	p, ok := _p.(Provider)
 	if !ok {
@@ -34,8 +33,6 @@ func (ps *InMemoryProviderStorage) Delete(ctx context.Context, name string) erro
 	ps.store.Delete(name)
 	return nil
 }
-
-var mu sync.Mutex
 
 func (ps *InMemoryProviderStorage) LoadAll(ctx context.Context) (map[string]Provider, error) {
 	result := make(map[string]Provider)
