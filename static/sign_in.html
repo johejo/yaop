@@ -1,0 +1,22 @@
+{{ define "sign-in" }}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Login</title>
+  </head>
+  <body>
+  {{ $prefix := .Prefix }}
+  {{ $next := .Next }}
+    {{ range .Names }}
+    <div id="sign-in">
+      <form method="GET" action="{{ $prefix }}/start">
+        <input type="hidden" name="provider" value="{{ . }}" />
+        <input type="hidden" name="next" value="{{ $next }}" />
+        <button type="submit">{{ . }}</button>
+      </form>
+    </div>
+    {{ end }}
+  </body>
+</html>
+{{ end }}

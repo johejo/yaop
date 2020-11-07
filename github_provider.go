@@ -27,17 +27,6 @@ func (p *GitHubProvider) GetName() string {
 	return p.Name
 }
 
-func NewDefaultGitHubProvider(ctx context.Context, config *GitHubProviderConfig) (*GitHubProvider, error) {
-	return NewGitHubProvider(ctx, "GitHub", config)
-}
-
-func NewGitHubProvider(ctx context.Context, name string, config *GitHubProviderConfig) (*GitHubProvider, error) {
-	return &GitHubProvider{
-		Name:   name,
-		Config: config,
-	}, nil
-}
-
 func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
 	config := &oauth2.Config{
 		ClientID:     p.Config.ClientID,

@@ -1,8 +1,30 @@
 providers:
   - name: github-0
+    type: "github"
     config:
       clientId: "xxx"
       clientSecret: "yyy"
-      scopes: []
-      state: "zzz"
-      allowSignup: false
+      scopes: ["read:user"]
+      allowSignup: "false"
+providerStorage:
+  type: "inmemory"
+sessionStorage:
+  type: "cookie"
+cookie:
+  key: "1234123412341234"
+  name: "_yaop_seesion"
+  csrfSuffix: "csrf"
+  expiresIn: "24h"
+  samesite: "none"
+  httpOnly: true
+  secure: true
+server:
+  prefix: "/oauth2"
+  firstPage: "/protected"
+  port: 8080
+  allowedDomains: []
+upstream:
+  url: "http://localhost:8888"
+  propergateSession:
+    enable: true
+    headerKey: "X-Yaop-Session"

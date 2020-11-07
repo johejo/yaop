@@ -40,8 +40,8 @@ type state struct {
 	Provider  string `msgpack:"provider"`
 }
 
-func newState(next string) *state {
-	return &state{CsrfToken: genSecret(), Next: next}
+func newState(next, provider string) *state {
+	return &state{CsrfToken: genSecret(), Next: next, Provider: provider}
 }
 
 func (s *state) EncodeToString() (string, error) {

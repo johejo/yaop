@@ -58,7 +58,7 @@ func TestInMemoryProviderStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, map[string]Provider{p0Name: p0, p1Name: p1}, ps)
+	assert.Equal(t, []Provider{p0, p1}, ps)
 
 	if err := s.Delete(ctx, p0Name); err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestInMemoryProviderStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, map[string]Provider{p1Name: p1}, ps)
+	assert.Equal(t, []Provider{p1}, ps)
 
 	_, err = s.Load(ctx, p0Name)
 	assert.Equal(t, ErrProviderNotFound, err)

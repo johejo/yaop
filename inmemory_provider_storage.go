@@ -3,6 +3,7 @@ package yaop
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync"
 )
 
@@ -34,19 +35,18 @@ func (ps *InMemoryProviderStorage) Delete(ctx context.Context, name string) erro
 	return nil
 }
 
-func (ps *InMemoryProviderStorage) LoadAll(ctx context.Context) (map[string]Provider, error) {
-	result := make(map[string]Provider)
+func (ps *InMemoryProviderStorage) LoadAll(ctx context.Context) ([]Provider, error) {
+	var result []Provider
 	ps.store.Range(func(key, value interface{}) bool {
 		p, ok := value.(Provider)
 		if !ok {
 			return false
 		}
-		_key, ok := key.(string)
-		if !ok {
-			return false
-		}
-		result[_key] = p
+		result = append(result, p)
 		return true
+	})
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GetName() < result[j].GetName()
 	})
 	return result, nil
 }
