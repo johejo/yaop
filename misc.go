@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
 	"github.com/sethvargo/go-password/password"
 )
 
@@ -76,4 +77,15 @@ func joinURLPath(a, b *url.URL) (path, rawpath string) {
 		return a.Path + "/" + b.Path, apath + "/" + bpath
 	}
 	return a.Path + b.Path, apath + bpath
+}
+
+func mapstructureDecodeJson(src, dst interface{}) error {
+	d, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:  dst,
+		TagName: "json",
+	})
+	if err != nil {
+		return err
+	}
+	return d.Decode(src)
 }

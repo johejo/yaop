@@ -26,14 +26,18 @@ func (p *GitHubProvider) GetType() string {
 	return p.Config.Type()
 }
 
-func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
-	config := &oauth2.Config{
+func (p *GitHubProvider) oauth2Config(redirectURL string) *oauth2.Config {
+	return &oauth2.Config{
 		ClientID:     p.Config.ClientID,
 		ClientSecret: p.Config.ClientSecret,
 		Endpoint:     github.Endpoint,
 		RedirectURL:  redirectURL,
 		Scopes:       p.Config.Scopes,
 	}
+}
+
+func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
+	config := p.oauth2Config(redirectURL)
 	var opts []oauth2.AuthCodeOption
 	if p.Config.AllowSignup != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("allow_signup", p.Config.AllowSignup))
@@ -45,24 +49,25 @@ func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
 }
 
 func (p *GitHubProvider) Exchange(ctx context.Context, code string, redirectURL string) (*oauth2.Token, error) {
-	config := &oauth2.Config{
-		ClientID:     p.Config.ClientID,
-		ClientSecret: p.Config.ClientSecret,
-		Endpoint:     github.Endpoint,
-		RedirectURL:  redirectURL,
-		Scopes:       p.Config.Scopes,
-	}
-	return config.Exchange(ctx, code)
+	return p.oauth2Config(redirectURL).Exchange(ctx, code)
 }
 
-func (p *GitHubProvider) GetEmailAddress(ctx context.Context, token *oauth2.Token) (string, error) {
+func (p *GitHubProvider) GetMe(ctx context.Context, token *oauth2.Token) (*Me, error) {
 	// TODO support Team, Organization, Collaborator
 	client := gogithub.NewClient(oauth2.NewClient(ctx, oauth2.StaticTokenSource(token)))
 	me, _, err := client.Users.Get(ctx, "")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return me.GetEmail(), nil
+	var raw map[string]interface{}
+	if err := mapstructureDecodeJson(me, &raw); err != nil {
+		return nil, err
+	}
+	return &Me{
+		Email:       me.GetEmail(),
+		DisplayName: me.GetName(),
+		Raw:         raw,
+	}, nil
 }
 
 // https://docs.github.com/en/free-pro-team@latest/developers/apps/authorizing-oauth-apps
@@ -76,6 +81,7 @@ type GitHubProviderConfig struct {
 }
 
 func (c *GitHubProviderConfig) FillDefaults() error {
+	c.Scopes = append(c.Scopes, "read:user")
 	return nil
 }
 

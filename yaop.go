@@ -35,6 +35,7 @@ func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
 
 	providers := make([]Provider, 0, len(config.Providers))
 	for _, p := range config.Providers {
+		var provider Provider
 		switch strings.ToLower(p.Type) {
 		case "github":
 			var gpc GitHubProviderConfig
@@ -44,11 +45,10 @@ func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
 			if err := gpc.FillDefaults(); err != nil {
 				return nil, err
 			}
-			gp := &GitHubProvider{
+			provider = &GitHubProvider{
 				Name:   p.Name,
 				Config: &gpc,
 			}
-			providers = append(providers, gp)
 		case "google":
 			var gpc GoogleProviderConfig
 			if err := DynamicConfigAs(p.Config, &gpc); err != nil {
@@ -57,14 +57,26 @@ func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
 			if err := gpc.FillDefaults(); err != nil {
 				return nil, err
 			}
-			gp := &GoogleProvider{
+			provider = &GoogleProvider{
 				Name:   p.Name,
 				Config: &gpc,
 			}
-			providers = append(providers, gp)
+		case "microsoft":
+			var mpc MicrosoftProviderConfig
+			if err := DynamicConfigAs(p.Config, &mpc); err != nil {
+				return nil, err
+			}
+			if err := mpc.FillDefaults(); err != nil {
+				return nil, err
+			}
+			provider = &MicrosoftProvider{
+				Name:   p.Name,
+				Config: &mpc,
+			}
 		default:
 			return nil, errors.New("invalid provider")
 		}
+		providers = append(providers, provider)
 	}
 
 	for _, p := range providers {

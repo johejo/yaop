@@ -14,7 +14,7 @@ type Provider interface {
 	GetType() string
 	AuthCodeURL(state string, redirectURL string) string
 	Exchange(ctx context.Context, code string, redirectURL string) (*oauth2.Token, error)
-	GetEmailAddress(ctx context.Context, token *oauth2.Token) (string, error)
+	GetMe(ctx context.Context, token *oauth2.Token) (*Me, error)
 }
 
 type providerJSON struct {

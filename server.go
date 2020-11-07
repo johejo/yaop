@@ -434,14 +434,14 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email, err := p.GetEmailAddress(ctx, token)
+	me, err := p.GetMe(ctx, token)
 	if err != nil {
 		log.Printf("[ERROR] get email error %v", err)
 		http.Error(w, "get email error", http.StatusInternalServerError)
 		return
 	}
 
-	sess := newSession(email, providerName, token)
+	sess := newSession(me, providerName, token)
 	cookieValue, err := s.sessionStorage.Store(ctx, sess)
 	if err != nil {
 		log.Printf("[ERROR] store session error %v", err)
@@ -490,7 +490,7 @@ func (s *Server) ctxWithSession(next http.Handler) http.Handler {
 			http.Redirect(w, r, s.config.Prefix+"/sign-in", http.StatusFound)
 			return
 		}
-		log.Printf("[DEBUG] session: ok id=%s, email=%s, token=%s", sess.ID, sess.Email, sess.Token)
+		log.Printf("[DEBUG] session: ok id=%s, email=%s, token=%s", sess.ID, sess.Me.Email, sess.Token)
 		next.ServeHTTP(w, r.WithContext(ContextWithSession(ctx, sess)))
 	})
 }

@@ -1,14 +1,20 @@
 providers:
-  - name: github-0
+  - name: github
     type: "github"
     config:
       clientId: "xxx"
       clientSecret: "yyy"
-  - name: google-0
+  - name: google
     type: "google"
     config:
       clientId: "xxx"
       clientSecret: "yyy"
+  - name: microsoft
+    type: "microsoft"
+    config:
+      clientId: "xxx"
+      clientSecret: "yyy"
+      tenant: "common"
 providerStorage:
   type: "inmemory"
 sessionStorage:

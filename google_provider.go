@@ -27,38 +27,48 @@ func (p *GoogleProvider) GetType() string {
 	return p.Config.Type()
 }
 
-func (p *GoogleProvider) AuthCodeURL(state string, redirectURL string) string {
-	config := &oauth2.Config{
+func (p *GoogleProvider) oauth2Config(redirectURL string) *oauth2.Config {
+	return &oauth2.Config{
 		ClientID:     p.Config.ClientID,
 		ClientSecret: p.Config.ClientSecret,
 		Endpoint:     google.Endpoint,
 		RedirectURL:  redirectURL,
 		Scopes:       p.Config.Scopes,
 	}
+}
+
+func (p *GoogleProvider) AuthCodeURL(state string, redirectURL string) string {
 	var opts []oauth2.AuthCodeOption // TODO https://developers.google.com/identity/protocols/oauth2/web-server#creatingclient
-	return config.AuthCodeURL(state, opts...)
+	return p.oauth2Config(redirectURL).AuthCodeURL(state, opts...)
 }
 
 func (p *GoogleProvider) Exchange(ctx context.Context, code string, redirectURL string) (*oauth2.Token, error) {
-	config := &oauth2.Config{
-		ClientID:     p.Config.ClientID,
-		ClientSecret: p.Config.ClientSecret,
-		Endpoint:     google.Endpoint,
-		RedirectURL:  redirectURL,
-	}
-	return config.Exchange(ctx, code)
+	return p.oauth2Config(redirectURL).Exchange(ctx, code)
 }
 
-func (p *GoogleProvider) GetEmailAddress(ctx context.Context, token *oauth2.Token) (string, error) {
-	svc, err := googleoauth2.NewService(ctx, option.WithTokenSource(oauth2.StaticTokenSource(token)))
+func (p *GoogleProvider) GetMe(ctx context.Context, token *oauth2.Token) (*Me, error) {
+	var opts []option.ClientOption
+	opts = append(opts,
+		option.WithScopes(p.Config.Scopes...),
+		option.WithTokenSource(oauth2.StaticTokenSource(token)),
+	)
+	s, err := googleoauth2.NewService(ctx, opts...)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	tokenInfo, err := svc.Tokeninfo().Do()
+	me, err := s.Userinfo.V2.Me.Get().Context(ctx).Do()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return tokenInfo.Email, nil
+	var raw map[string]interface{}
+	if err := mapstructureDecodeJson(me, &raw); err != nil {
+		return nil, err
+	}
+	return &Me{
+		Email:       me.Email,
+		DisplayName: me.Name,
+		Raw:         raw,
+	}, nil
 }
 
 // https://developers.google.com/identity/protocols/oauth2
@@ -69,7 +79,7 @@ type GoogleProviderConfig struct {
 }
 
 func (c *GoogleProviderConfig) FillDefaults() error {
-	c.Scopes = append(c.Scopes, googleoauth2.UserinfoEmailScope)
+	c.Scopes = append(c.Scopes, googleoauth2.UserinfoEmailScope, googleoauth2.OpenIDScope, googleoauth2.UserinfoProfileScope)
 	return nil
 }
 

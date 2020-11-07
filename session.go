@@ -11,14 +11,20 @@ import (
 )
 
 type Session struct {
-	ID          string        `json:"id" msgpack:"id"`
-	ProvideName string        `json:"provideName" msgpack:"providerName"`
-	Email       string        `json:"email" msgpack:"email"`
-	Token       *oauth2.Token `json:"token" msgpack:"token"`
+	ID           string        `json:"id,omitempty" msgpack:"id"`
+	ProviderName string        `json:"provider_name,omitempty" msgpack:"provider_name"`
+	Me           *Me           `json:"me,omitempty" msgpack:"me"`
+	Token        *oauth2.Token `json:"token,omitempty" msgpack:"token"`
 }
 
-func newSession(email, providerName string, token *oauth2.Token) *Session {
-	return &Session{ID: uuid.New().String(), Email: email, Token: token}
+func newSession(me *Me, providerName string, token *oauth2.Token) *Session {
+	return &Session{ID: uuid.New().String(), Me: me, Token: token, ProviderName: providerName}
+}
+
+type Me struct {
+	Email       string                 `json:"email,omitempty" msgpack:"email"`
+	DisplayName string                 `json:"display_name,omitempty" msgpack:"display_name"`
+	Raw         map[string]interface{} `json:"raw,omitempty" msgpack:"raw"`
 }
 
 type SessionStorage interface {

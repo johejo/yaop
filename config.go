@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/imdario/mergo"
-	"github.com/mitchellh/mapstructure"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,7 +83,7 @@ func (c *UpstreamConfig) FillDefaults() error {
 
 type ProviderConfig struct {
 	Name   string        `yaml:"name" validate:"required"`
-	Type   string        `yaml:"type" validate:"required,oneof=github google"` // TODO support microsoft
+	Type   string        `yaml:"type" validate:"required,oneof=github google microsoft"` // TODO support other providers
 	Config DynamicConfig `yaml:"config" validate:"required"`
 }
 
@@ -95,17 +94,7 @@ func (c *ProviderConfig) FillDefaults() error {
 type DynamicConfig interface{}
 
 func DynamicConfigAs(c DynamicConfig, pc ProviderConfigDetail) error {
-	d, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result:  pc,
-		TagName: "json",
-	})
-	if err != nil {
-		return err
-	}
-	if err := d.Decode(c); err != nil {
-		return err
-	}
-	return nil
+	return mapstructureDecodeJson(c, pc)
 }
 
 type ProviderStorageConfig struct {
