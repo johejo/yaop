@@ -84,7 +84,7 @@ func (c *UpstreamConfig) FillDefaults() error {
 
 type ProviderConfig struct {
 	Name   string        `yaml:"name" validate:"required"`
-	Type   string        `yaml:"type" validate:"required,oneof=github"` // TODO support google, microsoft
+	Type   string        `yaml:"type" validate:"required,oneof=github google"` // TODO support microsoft
 	Config DynamicConfig `yaml:"config" validate:"required"`
 }
 
@@ -94,7 +94,7 @@ func (c *ProviderConfig) FillDefaults() error {
 
 type DynamicConfig interface{}
 
-func DynamicConfigAs(c DynamicConfig, pc ConfigForEachProvider) error {
+func DynamicConfigAs(c DynamicConfig, pc ProviderConfigDetail) error {
 	d, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		Result:  pc,
 		TagName: "json",
@@ -131,7 +131,7 @@ func (c *SessionStorageConfig) FillDefaults() error {
 }
 
 type ServerConfig struct {
-	Prefix    string `yaml:"prefix"`
+	Prefix    string `yaml:"prefix" validate:"startswith=/"`
 	Port      int    `yaml:"port"`
 	FirstPage string `yaml:"firstPage" validate:"startswith=/"`
 
@@ -140,7 +140,7 @@ type ServerConfig struct {
 
 func (c *ServerConfig) FillDefaults() error {
 	defaults := &ServerConfig{
-		Prefix:    "oauth2",
+		Prefix:    "/oauth2",
 		Port:      8080,
 		FirstPage: "/",
 	}
@@ -189,28 +189,7 @@ func (s *samesite) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// https://docs.github.com/en/free-pro-team@latest/developers/apps/authorizing-oauth-apps
-type GitHubProviderConfig struct {
-	ClientID     string `json:"clientId,omitempty" yaml:"clientId" vavalidate:"required"`
-	ClientSecret string `json:"clientSecret,omitempty" yaml:"clientSecret" validate:"required"`
-	// https://docs.github.com/en/free-pro-team@latest/developers/apps/scopes-for-oauth-apps#available-scopes
-	Scopes      []string `json:"scopes,omitempty" yaml:"scopes"`
-	Login       string   `json:"login,omitempty" yaml:"login"`
-	AllowSignup string   `json:"allowSignup,omitempty" yaml:"allowSignup" validate:"omitempty,true|false"`
+type ProviderConfigDetail interface {
+	Type() string
+	fillDefaults
 }
-
-func (c *GitHubProviderConfig) FillDefaults() error {
-	return nil
-}
-
-func (c *GitHubProviderConfig) Name() string {
-	return "github"
-}
-
-type ConfigForEachProvider interface {
-	Name() string
-}
-
-var (
-	_ ConfigForEachProvider = (*GitHubProviderConfig)(nil)
-)

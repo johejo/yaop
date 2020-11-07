@@ -51,8 +51,8 @@ func run(ctx context.Context) error {
 	// background upstream server for debug
 	mux := http.NewServeMux()
 	mux.HandleFunc("/protected", func(w http.ResponseWriter, r *http.Request) {
-		email := r.Header.Get(config.Upstream.PropergateSession.HeaderKey)
-		w.Write([]byte(fmt.Sprintf("protected, email=%s", email)))
+		session := r.Header.Get(config.Upstream.PropergateSession.HeaderKey)
+		w.Write([]byte(fmt.Sprintf("protected, session=%s", session)))
 	})
 	go func() {
 		http.ListenAndServe(":8888", mux)

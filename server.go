@@ -282,7 +282,7 @@ func (s *Server) Start(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(
 		w, r,
-		p.AuthCodeURL(encodedState, s.getCallbackURL(r)),
+		p.AuthCodeURL(encodedState, s.getCallbackURL(r, p.GetType())),
 		http.StatusFound,
 	)
 }
@@ -310,10 +310,10 @@ func (s *Server) getNext(r *http.Request) (string, error) {
 	return "", errors.New("invalid next url")
 }
 
-func (s *Server) getCallbackURL(r *http.Request) string {
+func (s *Server) getCallbackURL(r *http.Request, providerType string) string {
 	clone := *r.URL
 	clone.Host = r.Host
-	clone.Path = s.config.Prefix + "/callback"
+	clone.Path = fmt.Sprintf("%s/callback/%s", s.config.Prefix, providerType)
 	clone.Fragment = ""
 	clone.RawQuery = ""
 	return clone.String()
@@ -427,7 +427,7 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := p.Exchange(ctx, code, s.getCallbackURL(r))
+	token, err := p.Exchange(ctx, code, s.getCallbackURL(r, p.GetType()))
 	if err != nil {
 		log.Printf("[ERROR] exchange error %v", err)
 		http.Error(w, "exchange error", http.StatusInternalServerError)

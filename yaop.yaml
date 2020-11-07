@@ -4,8 +4,11 @@ providers:
     config:
       clientId: "xxx"
       clientSecret: "yyy"
-      scopes: ["read:user"]
-      allowSignup: "false"
+  - name: google-0
+    type: "google"
+    config:
+      clientId: "xxx"
+      clientSecret: "yyy"
 providerStorage:
   type: "inmemory"
 sessionStorage:

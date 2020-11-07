@@ -41,7 +41,23 @@ func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
 			if err := DynamicConfigAs(p.Config, &gpc); err != nil {
 				return nil, err
 			}
+			if err := gpc.FillDefaults(); err != nil {
+				return nil, err
+			}
 			gp := &GitHubProvider{
+				Name:   p.Name,
+				Config: &gpc,
+			}
+			providers = append(providers, gp)
+		case "google":
+			var gpc GoogleProviderConfig
+			if err := DynamicConfigAs(p.Config, &gpc); err != nil {
+				return nil, err
+			}
+			if err := gpc.FillDefaults(); err != nil {
+				return nil, err
+			}
+			gp := &GoogleProvider{
 				Name:   p.Name,
 				Config: &gpc,
 			}

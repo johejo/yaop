@@ -8,7 +8,10 @@ import (
 	"golang.org/x/oauth2/github"
 )
 
-var _ Provider = (*GitHubProvider)(nil)
+var (
+	_ Provider             = (*GitHubProvider)(nil)
+	_ ProviderConfigDetail = (*GitHubProviderConfig)(nil)
+)
 
 type GitHubProvider struct {
 	Name   string                `json:"name,omitempty"`
@@ -17,6 +20,10 @@ type GitHubProvider struct {
 
 func (p *GitHubProvider) GetName() string {
 	return p.Name
+}
+
+func (p *GitHubProvider) GetType() string {
+	return p.Config.Type()
 }
 
 func (p *GitHubProvider) AuthCodeURL(state string, redirectURL string) string {
@@ -56,4 +63,22 @@ func (p *GitHubProvider) GetEmailAddress(ctx context.Context, token *oauth2.Toke
 		return "", err
 	}
 	return me.GetEmail(), nil
+}
+
+// https://docs.github.com/en/free-pro-team@latest/developers/apps/authorizing-oauth-apps
+type GitHubProviderConfig struct {
+	ClientID     string `json:"clientId,omitempty" yaml:"clientId" vavalidate:"required"`
+	ClientSecret string `json:"clientSecret,omitempty" yaml:"clientSecret" validate:"required"`
+	// https://docs.github.com/en/free-pro-team@latest/developers/apps/scopes-for-oauth-apps#available-scopes
+	Scopes      []string `json:"scopes,omitempty" yaml:"scopes"`
+	Login       string   `json:"login,omitempty" yaml:"login"`
+	AllowSignup string   `json:"allowSignup,omitempty" yaml:"allowSignup" validate:"omitempty,true|false"`
+}
+
+func (c *GitHubProviderConfig) FillDefaults() error {
+	return nil
+}
+
+func (c *GitHubProviderConfig) Type() string {
+	return "github"
 }

@@ -11,6 +11,7 @@ import (
 
 type Provider interface {
 	GetName() string
+	GetType() string
 	AuthCodeURL(state string, redirectURL string) string
 	Exchange(ctx context.Context, code string, redirectURL string) (*oauth2.Token, error)
 	GetEmailAddress(ctx context.Context, token *oauth2.Token) (string, error)
