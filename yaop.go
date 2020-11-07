@@ -7,6 +7,12 @@ import (
 )
 
 func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+	if err := config.FillDefaults(); err != nil {
+		return nil, err
+	}
 	var ps ProviderStorage
 	switch config.ProviderStorage.Type {
 	case "inmemory":
@@ -32,7 +38,7 @@ func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
 		switch strings.ToLower(p.Type) {
 		case "github":
 			var gpc GitHubProviderConfig
-			if err := p.Config.As(&gpc); err != nil {
+			if err := DynamicConfigAs(p.Config, &gpc); err != nil {
 				return nil, err
 			}
 			gp := &GitHubProvider{
@@ -52,7 +58,7 @@ func NewServerWithConfig(ctx context.Context, config *Config) (*Server, error) {
 	}
 
 	var opts []ServerOption
-	if config.Upstream != nil && config.Upstream.PropergateSession.Enable {
+	if config.Upstream.URL != "" {
 		opts = append(opts, WithUpstream(config.Upstream))
 	}
 	return NewServer(ctx, config.Server, config.Cookie, ps, ss, opts...)

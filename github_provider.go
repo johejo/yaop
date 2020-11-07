@@ -15,14 +15,6 @@ type GitHubProvider struct {
 	Config *GitHubProviderConfig `json:"config,omitempty"`
 }
 
-type GitHubProviderConfig struct {
-	ClientID     string   `json:"clientId,omitempty" yaml:"clientId"`
-	ClientSecret string   `json:"clientSecret,omitempty" yaml:"clientSecret"`
-	Scopes       []string `json:"scopes,omitempty" yaml:"scopes"`
-	Login        string   `json:"login,omitempty" yaml:"login"`
-	AllowSignup  string   `json:"allowSignup,omitempty" yaml:"allowSignup"`
-}
-
 func (p *GitHubProvider) GetName() string {
 	return p.Name
 }

@@ -9,8 +9,9 @@ type ServerOption func(config *serverOptionalConfig)
 
 type serverOptionalConfig struct {
 	protected  http.Handler
-	upstream   *UpstreamConfig
+	upstream   UpstreamConfig
 	signInTmpl *template.Template
+	httpClient *http.Client
 }
 
 func WithProtectedHandler(h http.Handler) ServerOption {
@@ -19,7 +20,7 @@ func WithProtectedHandler(h http.Handler) ServerOption {
 	}
 }
 
-func WithUpstream(upstreamConfig *UpstreamConfig) ServerOption {
+func WithUpstream(upstreamConfig UpstreamConfig) ServerOption {
 	return func(cfg *serverOptionalConfig) {
 		cfg.upstream = upstreamConfig
 	}
@@ -28,5 +29,11 @@ func WithUpstream(upstreamConfig *UpstreamConfig) ServerOption {
 func WithSignInTmpl(tmpl *template.Template) ServerOption {
 	return func(cfg *serverOptionalConfig) {
 		cfg.signInTmpl = tmpl
+	}
+}
+
+func WithHTTPClient(httpClient *http.Client) ServerOption {
+	return func(cfg *serverOptionalConfig) {
+		cfg.httpClient = httpClient
 	}
 }

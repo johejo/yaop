@@ -27,28 +27,30 @@ var (
 
 type Server struct {
 	mux             http.Handler
-	config          *ServerConfig
+	config          ServerConfig
 	providerStorage ProviderStorage
 	sessionStorage  SessionStorage
 
-	cookieConfig   *CookieConfig
-	upstreamConfig *UpstreamConfig
+	cookieConfig   CookieConfig
+	upstreamConfig UpstreamConfig
 
 	signInTmpl *template.Template
 
 	httpClient *http.Client
 }
 
-func NewServer(ctx context.Context, config *ServerConfig, cookieConfig *CookieConfig, providerStorage ProviderStorage, sessionStorage SessionStorage, opts ...ServerOption) (*Server, error) {
+func NewServer(ctx context.Context, config ServerConfig, cookieConfig CookieConfig, providerStorage ProviderStorage, sessionStorage SessionStorage, opts ...ServerOption) (*Server, error) {
 	optionalConfig := new(serverOptionalConfig)
 	for _, opt := range append([]ServerOption{
 		WithSignInTmpl(template.Must(template.New("sign-in").Parse(signInTmplContent))),
+		WithHTTPClient(http.DefaultClient),
 	}, opts...) {
 		opt(optionalConfig)
 	}
 	s := new(Server)
 	s.config = config
 	s.signInTmpl = optionalConfig.signInTmpl
+	s.httpClient = optionalConfig.httpClient
 
 	r := chi.NewRouter()
 	r.Use(
@@ -87,7 +89,7 @@ func NewServer(ctx context.Context, config *ServerConfig, cookieConfig *CookieCo
 		}
 	})
 
-	if optionalConfig.upstream != nil {
+	if optionalConfig.upstream.URL != "" {
 		u, err := url.Parse(optionalConfig.upstream.URL)
 		if err != nil {
 			return nil, err
@@ -237,6 +239,7 @@ func (s *Server) DeleteProvider(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Run(ctx context.Context) error {
 	addr := fmt.Sprintf(":%d", s.config.Port)
+	log.Printf("[INFO] start server at %s", addr)
 	return http.ListenAndServe(addr, s.mux)
 }
 
@@ -294,6 +297,7 @@ func (s *Server) getNext(r *http.Request) (string, error) {
 		log.Println(err)
 		return "", errors.New("invalid next url")
 	}
+	// TODO open redirect vulnerability ?
 	switch nextURL.Host {
 	// same host?
 	case r.Host, r.URL.Host:
@@ -469,10 +473,6 @@ func (s *Server) Auth(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ctxWithHTTPClient(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.httpClient == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), oauth2.HTTPClient, s.httpClient)))
 	})
 }
